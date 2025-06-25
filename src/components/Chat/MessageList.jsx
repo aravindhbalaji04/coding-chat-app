@@ -12,17 +12,18 @@ const MessageList = ({ selectedUser }) => {
   const subscriptionRef = useRef(null)
 
   useEffect(() => {
-    if (selectedUser) {
+    if (selectedUser && user) {
       fetchMessages()
       setupRealtimeSubscription()
     }
 
     return () => {
       if (subscriptionRef.current) {
+        console.log('Unsubscribing from channel')
         subscriptionRef.current.unsubscribe()
       }
     }
-  }, [selectedUser, user])
+  }, [selectedUser?.id, user?.id]) // Add .id to dependencies
 
   useEffect(() => {
     scrollToBottom()
@@ -33,6 +34,8 @@ const MessageList = ({ selectedUser }) => {
   }
 
   const fetchMessages = async () => {
+    if (!user || !selectedUser) return
+    
     setLoading(true)
     try {
       const { data, error } = await supabase
@@ -46,7 +49,7 @@ const MessageList = ({ selectedUser }) => {
 
       if (error) {
         console.error('Error fetching messages:', error)
-        throw error
+        return
       }
       
       console.log('Fetched messages:', data)
@@ -59,6 +62,8 @@ const MessageList = ({ selectedUser }) => {
   }
 
   const setupRealtimeSubscription = () => {
+    if (!user || !selectedUser) return
+
     // Unsubscribe from any existing subscription
     if (subscriptionRef.current) {
       subscriptionRef.current.unsubscribe()
@@ -66,27 +71,33 @@ const MessageList = ({ selectedUser }) => {
 
     console.log('Setting up realtime subscription for user:', user.id, 'and selected user:', selectedUser.id)
 
-    // Create a more specific channel name
-    const channelName = `messages:${Math.min(user.id, selectedUser.id)}-${Math.max(user.id, selectedUser.id)}`
-    
     const channel = supabase
-      .channel(channelName)
+      .channel('messages-channel')
       .on(
         'postgres_changes',
         {
           event: 'INSERT',
           schema: 'public',
           table: 'messages'
-          // Remove the filter from here - we'll filter in the callback
         },
         async (payload) => {
           console.log('Received realtime message:', payload)
           
-          // Check if this message is relevant to the current conversation
           const newMessage = payload.new
+          
+          // Check if this message is relevant to the current conversation
+          // Convert to strings for comparison to handle UUID properly
           const isRelevant = 
-            (newMessage.sender_id === user.id && newMessage.receiver_id === selectedUser.id) ||
-            (newMessage.sender_id === selectedUser.id && newMessage.receiver_id === user.id)
+            (String(newMessage.sender_id) === String(user.id) && String(newMessage.receiver_id) === String(selectedUser.id)) ||
+            (String(newMessage.sender_id) === String(selectedUser.id) && String(newMessage.receiver_id) === String(user.id))
+          
+          console.log('Message relevance check:', {
+            newMessage_sender: newMessage.sender_id,
+            newMessage_receiver: newMessage.receiver_id,
+            current_user: user.id,
+            selected_user: selectedUser.id,
+            isRelevant
+          })
           
           if (!isRelevant) {
             console.log('Message not relevant to current conversation')
@@ -118,7 +129,9 @@ const MessageList = ({ selectedUser }) => {
                   console.log('Message already exists, skipping')
                   return prev
                 }
-                return [...prev, messageWithSender]
+                const newMessages = [...prev, messageWithSender]
+                console.log('Updated messages count:', newMessages.length)
+                return newMessages
               })
             }
           } catch (error) {
@@ -138,7 +151,6 @@ const MessageList = ({ selectedUser }) => {
     subscriptionRef.current = channel
   }
 
-  // ...existing code...
   if (!selectedUser) {
     return (
       <div className="no-user-selected">
