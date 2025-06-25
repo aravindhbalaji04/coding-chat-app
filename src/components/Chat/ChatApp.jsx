@@ -3,7 +3,7 @@ import { useAuth } from '../../contexts/AuthContext'
 import UserList from './UserList'
 import MessageList from './MessageList'
 import MessageInput from './MessageInput'
-import SupabaseTest from '../Debug/SupabaseTest' // Add this
+import UserDebug from '../Debug/UserDebug' // Add this
 import { LogOut, User } from 'lucide-react'
 
 const ChatApp = () => {
@@ -22,7 +22,7 @@ const ChatApp = () => {
               onClick={() => setShowDebug(!showDebug)}
               className="logout-btn"
             >
-              Debug
+              {showDebug ? 'Hide Debug' : 'Show Debug'}
             </button>
             <div className="user-info">
               <User size={20} />
@@ -37,11 +37,7 @@ const ChatApp = () => {
       </div>
 
       {/* Debug Panel */}
-      {showDebug && (
-        <div style={{ padding: '20px' }}>
-          <SupabaseTest />
-        </div>
-      )}
+      {showDebug && <UserDebug />}
 
       {/* Main Content */}
       <div className="chat-main">
