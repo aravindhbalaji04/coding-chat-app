@@ -66,29 +66,42 @@ const MessageList = ({ selectedUser }) => {
 
     console.log('Setting up realtime subscription for user:', user.id, 'and selected user:', selectedUser.id)
 
+    // Create a more specific channel name
+    const channelName = `messages:${Math.min(user.id, selectedUser.id)}-${Math.max(user.id, selectedUser.id)}`
+    
     const channel = supabase
-      .channel(`messages_${user.id}_${selectedUser.id}`)
+      .channel(channelName)
       .on(
         'postgres_changes',
         {
           event: 'INSERT',
           schema: 'public',
-          table: 'messages',
-          // Filter for messages between current user and selected user
-          filter: `or(and(sender_id.eq.${user.id},receiver_id.eq.${selectedUser.id}),and(sender_id.eq.${selectedUser.id},receiver_id.eq.${user.id}))`
+          table: 'messages'
+          // Remove the filter from here - we'll filter in the callback
         },
         async (payload) => {
           console.log('Received realtime message:', payload)
           
+          // Check if this message is relevant to the current conversation
+          const newMessage = payload.new
+          const isRelevant = 
+            (newMessage.sender_id === user.id && newMessage.receiver_id === selectedUser.id) ||
+            (newMessage.sender_id === selectedUser.id && newMessage.receiver_id === user.id)
+          
+          if (!isRelevant) {
+            console.log('Message not relevant to current conversation')
+            return
+          }
+          
           try {
             // Fetch the complete message with sender info
-            const { data: newMessage, error } = await supabase
+            const { data: messageWithSender, error } = await supabase
               .from('messages')
               .select(`
                 *,
                 sender:profiles!messages_sender_id_fkey(display_name, avatar_url)
               `)
-              .eq('id', payload.new.id)
+              .eq('id', newMessage.id)
               .single()
 
             if (error) {
@@ -96,13 +109,16 @@ const MessageList = ({ selectedUser }) => {
               return
             }
 
-            if (newMessage) {
-              console.log('Adding new message to state:', newMessage)
+            if (messageWithSender) {
+              console.log('Adding new message to state:', messageWithSender)
               setMessages(prev => {
                 // Check if message already exists to avoid duplicates
-                const exists = prev.some(msg => msg.id === newMessage.id)
-                if (exists) return prev
-                return [...prev, newMessage]
+                const exists = prev.some(msg => msg.id === messageWithSender.id)
+                if (exists) {
+                  console.log('Message already exists, skipping')
+                  return prev
+                }
+                return [...prev, messageWithSender]
               })
             }
           } catch (error) {
@@ -122,6 +138,7 @@ const MessageList = ({ selectedUser }) => {
     subscriptionRef.current = channel
   }
 
+  // ...existing code...
   if (!selectedUser) {
     return (
       <div className="no-user-selected">
